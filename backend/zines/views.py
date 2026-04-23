@@ -1,51 +1,146 @@
-from rest_framework import viewsets, permissions, status, generics
+from rest_framework import generics, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.decorators import action
-from .models import Zine
-from .serializers import ZineSerializer
-from django.contrib.auth.models import User
-from django.db import models
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
+from django.shortcuts import get_object_or_404
+import cloudinary
+import cloudinary.uploader
+from django.conf import settings
 
-class ZineViewSet(viewsets.ModelViewSet):
-    queryset = Zine.objects.all()
-    serializer_class = ZineSerializer
-    lookup_field = 'slug'
+from .models import Zine, ZineCell
+from .serializers import ZineSerializer, ZineCreateSerializer, ZineCellSerializer
 
-    def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [AllowAny()]
-        return [IsAuthenticated()]
+
+class ZineListCreateView(generics.ListCreateAPIView):
+    """Public feed (GET) + Create zine (POST)"""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_serializer_class(self):
+        if self.request.method == 'POST':
+            return ZineCreateSerializer
+        return ZineSerializer
 
     def get_queryset(self):
-        queryset = Zine.objects.all()
-        # If accessing the 'mine' action, filter by owner
-        if self.action == 'mine':
-            return queryset.filter(owner=self.request.user)
-        # For general list, show only public zines if not authenticated
-        if not self.request.user.is_authenticated:
-            return queryset.filter(is_public=True)
-        # If authenticated, show public ones + user's own ones
-        return queryset.filter(models.Q(is_public=True) | models.Q(owner=self.request.user)).distinct()
-
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
-    def mine(self, request):
-        zines = self.get_queryset()
-        serializer = self.get_serializer(zines, many=True)
-        return Response(serializer.data)
+        return Zine.objects.filter(is_public=True).select_related('owner').prefetch_related('cells')
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    permission_classes = (AllowAny,)
-    
-    def post(self, request, *args, **kwargs):
-        username = request.data.get('username')
-        password = request.data.get('password')
-        email = request.data.get('email')
-        if not username or not password:
-            return Response({'error': 'Username and password required'}, status=status.HTTP_400_BAD_BAD_REQUEST)
-        user = User.objects.create_user(username=username, email=email, password=password)
-        return Response({'message': 'User created successfully'}, status=status.HTTP_201_CREATED)
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        zine = serializer.save(owner=request.user)
+        return Response(ZineSerializer(zine).data, status=status.HTTP_201_CREATED)
+
+
+class MyZinesView(generics.ListAPIView):
+    """User's own zines (private + public)."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = ZineSerializer
+
+    def get_queryset(self):
+        return Zine.objects.filter(owner=self.request.user).prefetch_related('cells')
+
+
+class ZineDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Get, update, delete a zine by slug."""
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return ZineCreateSerializer
+        return ZineSerializer
+
+    def get_queryset(self):
+        if self.request.user.is_authenticated:
+            return Zine.objects.all().select_related('owner').prefetch_related('cells')
+        return Zine.objects.filter(is_public=True).select_related('owner').prefetch_related('cells')
+
+    def update(self, request, *args, **kwargs):
+        zine = self.get_object()
+        if zine.owner != request.user:
+            return Response({'error': 'Not your zine.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        zine = self.get_object()
+        if zine.owner != request.user:
+            return Response({'error': 'Not your zine.'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
+
+
+class TogglePrivacyView(APIView):
+    """Toggle is_public for a zine."""
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, slug):
+        zine = get_object_or_404(Zine, slug=slug, owner=request.user)
+        zine.is_public = not zine.is_public
+        zine.save()
+        return Response({'is_public': zine.is_public, 'slug': zine.slug})
+
+
+class UploadImageView(APIView):
+    """Upload image to Cloudinary and return smart-cropped URL."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        file = request.FILES.get('image')
+        cell_key = request.data.get('cell_key', 'cover')
+        zine_id = request.data.get('zine_id')
+
+        if not file:
+            return Response({'error': 'No image provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            cloudinary.config(
+                cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+                api_key=settings.CLOUDINARY_API_KEY,
+                api_secret=settings.CLOUDINARY_API_SECRET,
+            )
+
+            result = cloudinary.uploader.upload(
+                file,
+                folder='pixelbrownie/zines',
+                transformation=[
+                    {'width': 400, 'height': 560, 'crop': 'fill', 'gravity': 'auto'},
+                    {'quality': 'auto', 'fetch_format': 'auto'},
+                ]
+            )
+
+            image_url = result.get('secure_url')
+            public_id = result.get('public_id')
+
+            # Update cell if zine_id and cell_key provided
+            if zine_id and cell_key:
+                try:
+                    zine = Zine.objects.get(id=zine_id, owner=request.user)
+                    cell, _ = ZineCell.objects.get_or_create(zine=zine, cell_key=cell_key)
+                    cell.image_url = image_url
+                    cell.cloudinary_public_id = public_id
+                    cell.save()
+                except Zine.DoesNotExist:
+                    pass
+
+            return Response({
+                'url': image_url,
+                'public_id': public_id,
+                'smart_crop_url': image_url,
+            })
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class UpdateCellView(APIView):
+    """Update a single zine cell."""
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, zine_id, cell_key):
+        zine = get_object_or_404(Zine, id=zine_id, owner=request.user)
+        cell, _ = ZineCell.objects.get_or_create(zine=zine, cell_key=cell_key)
+        serializer = ZineCellSerializer(cell, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

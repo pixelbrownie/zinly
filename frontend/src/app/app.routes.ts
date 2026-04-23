@@ -1,29 +1,52 @@
 import { Routes } from '@angular/router';
-import { EditorComponent } from './components/editor/editor';
-import { LoginComponent } from './components/login/login';
-import { SignupComponent } from './components/signup/signup';
-import { LandingComponent } from './components/landing/landing';
-import { DashboardComponent } from './components/dashboard/dashboard';
-import { authGuard } from './guards/auth';
+import { authGuard } from './core/guards/auth.guard';
+import { guestGuard } from './core/guards/guest.guard';
 
 export const routes: Routes = [
-  { path: '', component: LandingComponent },
-  { path: 'login', component: LoginComponent },
-  { path: 'signup', component: SignupComponent },
-  { 
-    path: 'dashboard', 
-    component: DashboardComponent, 
-    canActivate: [authGuard] 
+  {
+    path: '',
+    loadComponent: () => import('./features/landing/landing.component').then(m => m.LandingComponent),
   },
-  { 
-    path: 'profile', 
-    component: DashboardComponent, 
-    canActivate: [authGuard] 
+  {
+    path: 'login',
+    loadComponent: () => import('./features/auth/login/login.component').then(m => m.LoginComponent),
+    canActivate: [guestGuard],
   },
-  { 
-    path: 'editor/:slug', 
-    component: EditorComponent, 
-    canActivate: [authGuard] 
+  {
+    path: 'signup',
+    loadComponent: () => import('./features/auth/signup/signup.component').then(m => m.SignupComponent),
+    canActivate: [guestGuard],
   },
-  { path: '**', redirectTo: '' }
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./features/profile/profile.component').then(m => m.ProfileComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'editor',
+    loadComponent: () => import('./features/editor/editor.component').then(m => m.EditorComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'editor/:slug',
+    loadComponent: () => import('./features/editor/editor.component').then(m => m.EditorComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'zine/:slug',
+    loadComponent: () => import('./features/zine-viewer/zine-viewer.component').then(m => m.ZineViewerComponent),
+  },
+  {
+    path: 'explore',
+    loadComponent: () => import('./features/explore/explore.component').then(m => m.ExploreComponent),
+  },
+  {
+    path: '**',
+    redirectTo: '',
+  },
 ];
