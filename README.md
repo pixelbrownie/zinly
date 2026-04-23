@@ -46,93 +46,6 @@ pixelbrownie-zines/
                 └── zine-viewer/ ← 3D flipbook viewer
 ```
 
----
-
-## 🚀 Setup
-
-### 1. Backend (Django)
-
-```bash
-cd backend
-
-# Create & activate venv
-python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Navigate into Django project
-cd pixelbrownie
-
-# Create .env file (optional, or export vars directly):
-# CLOUDINARY_CLOUD_NAME=your_cloud_name
-# CLOUDINARY_API_KEY=your_api_key
-# CLOUDINARY_API_SECRET=your_api_secret
-
-# Run migrations
-python manage.py makemigrations users
-python manage.py makemigrations zines
-python manage.py migrate
-
-# Create superuser (optional)
-python manage.py createsuperuser
-
-# Start server on port 8000
-python manage.py runserver
-```
-
-Backend runs at: **http://localhost:8000**
-
----
-
-### 2. Frontend (Angular)
-
-```bash
-cd frontend
-
-# Install Node dependencies
-npm install
-
-# Copy your uploaded assets into src/assets/
-mkdir -p src/assets
-cp path/to/start-btn.png src/assets/
-cp path/to/heart-zine.png src/assets/
-
-# Start dev server
-npm start
-```
-
-Frontend runs at: **http://localhost:4200**
-
----
-
-## ⚙️ Configuration
-
-### Cloudinary (Required for image upload)
-
-1. Sign up at [cloudinary.com](https://cloudinary.com) (free tier is fine)
-2. Get your **Cloud Name**, **API Key**, **API Secret**
-3. Set them in `backend/pixelbrownie/core/settings.py` or as env vars:
-
-```bash
-export CLOUDINARY_CLOUD_NAME=your_cloud_name
-export CLOUDINARY_API_KEY=your_api_key
-export CLOUDINARY_API_SECRET=your_api_secret
-```
-
-4. Update `frontend/src/environments/environment.ts`:
-
-```ts
-export const environment = {
-  production: false,
-  apiUrl: 'http://localhost:8000/api',
-  cloudinaryCloudName: 'your_cloud_name',  // ← set this
-};
-```
-
----
-
 ## 🎨 Design System
 
 | Token | Value |
@@ -157,36 +70,6 @@ export const environment = {
 ├─────────┼─────────┼─────────┼─────────┤
 │  pg 5   │  pg 6   │  back   │  cover  │  ← BOTTOM ROW (0° — normal)
 └─────────┴─────────┴─────────┴─────────┘
-```
-
-This mirrors the physical folding logic of a one-sheet 8-page zine.
-
----
-
-## 🔗 API Endpoints
-
-### Auth
-| Method | URL | Description |
-|--------|-----|-------------|
-| POST | `/api/auth/register/` | Create account |
-| POST | `/api/auth/login/` | Login → returns JWT |
-| GET/PATCH | `/api/auth/me/` | Get/update current user |
-| POST | `/api/token/refresh/` | Refresh JWT |
-
-### Zines
-| Method | URL | Description |
-|--------|-----|-------------|
-| GET | `/api/zines/` | Public feed |
-| POST | `/api/zines/` | Create zine |
-| GET | `/api/zines/mine/` | My zines |
-| GET | `/api/zines/:slug/` | Get one zine |
-| PATCH | `/api/zines/:slug/` | Update zine |
-| DELETE | `/api/zines/:slug/` | Delete zine |
-| PATCH | `/api/zines/:slug/toggle-privacy/` | Toggle public/private |
-| POST | `/api/zines/upload/image/` | Upload image to Cloudinary |
-| PATCH | `/api/zines/:id/cell/:key/` | Update a single cell |
-
----
 
 ## ✨ Key Features
 
@@ -228,26 +111,3 @@ frontend/src/assets/
 ├── start-btn.png     ← Pink "Start♡" button image (landing page)
 └── favicon.ico
 ```
-
----
-
-## 🐛 Common Issues
-
-**"Failed to load zines"** → Make sure Django is running on port 8000 and `environment.ts` points to `http://localhost:8000/api`
-
-**CORS errors** → Verify `CORS_ALLOWED_ORIGINS` in `settings.py` includes `http://localhost:4200`
-
-**Cloudinary upload fails** → Check your env vars are set; for local testing you can skip Cloudinary and just store a placeholder URL
-
-**JWT expired** → Call `/api/token/refresh/` with the refresh token; implement a response interceptor to auto-refresh
-
----
-
-## 🗺 Roadmap
-
-- [ ] Auto JWT refresh interceptor
-- [ ] Settings page (update username/password)
-- [ ] Zine templates / themes
-- [ ] Comments on public zines
-- [ ] Mobile swipe gestures for book flip
-- [ ] WebSocket live preview
