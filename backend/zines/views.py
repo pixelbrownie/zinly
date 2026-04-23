@@ -95,9 +95,17 @@ class UploadImageView(APIView):
             return Response({'error': 'No image provided.'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            fs = FileSystemStorage()
-            filename = fs.save(file.name, file)
-            image_url = request.build_absolute_uri(fs.url(filename))
+            if not getattr(settings, 'CLOUDINARY_STORAGE', None) and not cloudinary.config().cloud_name:
+                return Response({'error': 'Cloudinary is not configured. Please add CLOUDINARY_URL to your .env file.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            upload_data = cloudinary.uploader.upload(
+                file,
+                folder=f"zines/{zine_id}" if zine_id else "zines/temp",
+                resource_type="image",
+                public_id=f"{cell_key}_{file.name.split('.')[0]}"
+            )
+            image_url = upload_data.get('secure_url')
+            public_id = upload_data.get('public_id')
 
             # Update cell if zine_id and cell_key provided
             if zine_id and cell_key:
@@ -105,6 +113,7 @@ class UploadImageView(APIView):
                     zine = Zine.objects.get(id=zine_id, owner=request.user)
                     cell, _ = ZineCell.objects.get_or_create(zine=zine, cell_key=cell_key)
                     cell.image_url = image_url
+                    cell.cloudinary_public_id = public_id
                     cell.save()
 
                     if cell_key == 'cover':
@@ -115,12 +124,12 @@ class UploadImageView(APIView):
 
             return Response({
                 'url': image_url,
-                'public_id': filename,
+                'public_id': public_id,
                 'smart_crop_url': image_url,
             })
 
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': f"Cloudinary Upload Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class UpdateCellView(APIView):

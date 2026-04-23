@@ -27,6 +27,8 @@ export interface Zine {
   updated_at: string;
 }
 
+import { map } from 'rxjs/operators';
+
 @Injectable({ providedIn: 'root' })
 export class ZineService {
   private base = `${environment.apiUrl}/zines`;
@@ -35,12 +37,12 @@ export class ZineService {
 
   // Public feed
   getPublicZines() {
-    return this.http.get<Zine[]>(`${this.base}/`);
+    return this.http.get<{results: Zine[]}>(`${this.base}/`).pipe(map(res => res.results || (res as any)));
   }
 
   // My zines
   getMyZines() {
-    return this.http.get<Zine[]>(`${this.base}/mine/`);
+    return this.http.get<{results: Zine[]}>(`${this.base}/mine/`).pipe(map(res => res.results || (res as any)));
   }
 
   // Get one
